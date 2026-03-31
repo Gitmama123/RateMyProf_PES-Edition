@@ -21,7 +21,26 @@ app.use("/reviews", reviewRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/requests", requestRoutes);
 
-// Health check endpoint
+// Health check / Diagnostic endpoint
+app.get("/api/health", async (req, res) => {
+  const dbStatus = mongoose.connection.readyState === 1 ? "Connected" : "Disconnected";
+  const dbName = mongoose.connection.name || "None";
+  
+  try {
+    const Professor = require("./models/Professor");
+    const count = await Professor.countDocuments();
+    res.json({ 
+      status: "Online", 
+      database: dbStatus, 
+      dbName: dbName,
+      professorCount: count,
+      environment: process.env.NODE_ENV || "development"
+    });
+  } catch (err) {
+    res.status(500).json({ status: "Error", error: err.message });
+  }
+});
+
 app.get("/", (req, res) => {
   res.json({ message: "Rate My Prof – PES Edition API is running 🚀" });
 });
@@ -32,13 +51,22 @@ async function startServer() {
   let mongoUri = process.env.MONGODB_URI;
 
   try {
-    // Try connecting to the configured URI first
-    await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 3000 });
-    console.log("✅ Connected to MongoDB");
+    // Try connecting to the configured URI first. Give Render more time in production.
+    const timeout = process.env.NODE_ENV === 'production' ? 20000 : 3000;
+    await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: timeout });
+    console.log("✅ Successfully connected to MongoDB Atlas");
 
     // Auto-seed if empty
     await seedDatabase();
   } catch (err) {
+    // In production, we MUST fail if we can't connect, not use memory DB!
+    if (process.env.NODE_ENV === 'production') {
+      console.error("❌ FATAL ERROR: Could not connect to MongoDB Atlas in production!");
+      console.error("Error Message:", err.message);
+      console.log("Check your MONGODB_URI and Atlas IP Whitelist.");
+      process.exit(1); 
+    }
+
     console.log("⚠️  Could not connect to MongoDB, starting in-memory database...");
     const { MongoMemoryServer } = require("mongodb-memory-server");
     const mongod = await MongoMemoryServer.create();
@@ -51,7 +79,7 @@ async function startServer() {
   }
 
   app.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
+    console.log(`🚀 Server is live on port ${PORT}`);
   });
 }
 
