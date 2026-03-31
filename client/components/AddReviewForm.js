@@ -3,9 +3,11 @@
 import { useState } from "react";
 import TagBadge, { AVAILABLE_TAGS } from "./TagBadge";
 import { submitReview } from "../lib/api";
+import { getToken, isAuthenticated, getUser, isAdmin } from "../lib/auth";
+import Link from "next/link";
 
 // AddReviewForm – form to submit an anonymous review for a professor
-export default function AddReviewForm({ professorId, onReviewAdded }) {
+export default function AddReviewForm({ professorId, professorName, onReviewAdded }) {
   const [formData, setFormData] = useState({
     rating: 3,
     teachingQuality: 3,
@@ -39,8 +41,9 @@ export default function AddReviewForm({ professorId, onReviewAdded }) {
     setSubmitting(true);
 
     try {
+      const token = getToken();
       const payload = { ...formData, rating: parseFloat(computedRating), professorId };
-      await submitReview(payload);
+      await submitReview(payload, token);
       setSuccess(true);
       setFormData({
         rating: 3,
@@ -60,13 +63,43 @@ export default function AddReviewForm({ professorId, onReviewAdded }) {
   };
 
   const sliderFields = [
-    { key: "teachingQuality", label: "Teaching Quality", color: "accent-cyan-500" },
-    { key: "difficulty", label: "Difficulty", color: "accent-orange-500" },
-    { key: "gradingStrictness", label: "Grading Strictness", color: "accent-amber-500" },
-    { key: "attendanceStrictness", label: "Attendance Strictness", color: "accent-pink-500" },
+    { key: "teachingQuality", label: "Teaching Quality (1: Poor, 5: Excellent)", color: "accent-cyan-500" },
+    { key: "difficulty", label: "Ease of Course (1: Hard, 5: Easy)", color: "accent-orange-500" },
+    { key: "gradingStrictness", label: "Grading (1: Very Strict, 5: Fair/Lax)", color: "accent-amber-500" },
+    { key: "attendanceStrictness", label: "Attendance (1: Strict, 5: Lenient)", color: "accent-pink-500" },
   ];
 
   const computedRating = ((formData.teachingQuality + formData.difficulty + formData.gradingStrictness + formData.attendanceStrictness) / 4).toFixed(1);
+
+  // ─── ACADEMIC VERIFICATION CHECK ───
+  // (Bypassed by user request: allow all students to rate all professors)
+  const user = getUser();
+  const isStudent = user && user.role === "student";
+
+  if (!isAuthenticated()) {
+    return (
+      <div className="bg-gray-900/40 border border-gray-800 rounded-2xl p-8 text-center space-y-4">
+        <div className="w-12 h-12 bg-indigo-500/20 text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-2">
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+          </svg>
+        </div>
+        <h3 className="text-xl font-bold text-white">Verification Required</h3>
+        <p className="text-gray-400 text-sm max-w-xs mx-auto">
+          To ensure honest and high-quality reviews, only verified PES University students can rate professors.
+        </p>
+        <Link 
+          href={`/login?redirect=${typeof window !== 'undefined' ? encodeURIComponent(window.location.pathname) : ''}`}
+          className="inline-block w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-xl transition-all shadow-lg shadow-indigo-500/20"
+        >
+          Sign In with PESU Academy
+        </Link>
+        <p className="text-[10px] text-gray-600 italic mt-4">
+          Your identity remains 100% anonymous through cryptographic hashing.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">

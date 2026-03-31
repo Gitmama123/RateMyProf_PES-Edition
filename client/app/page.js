@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useMemo } from "react";
 import ProfessorCard from "../components/ProfessorCard";
+import RequestProfessorModal from "../components/RequestProfessorModal";
 import { fetchProfessors } from "../lib/api";
+import { AlertCircle, ChevronLeft, ChevronRight } from "lucide-react";
 
 // Available tags for filtering (same as TagBadge)
 const FILTER_TAGS = [
@@ -30,6 +32,18 @@ export default function HomePage() {
   const [selectedDepartment, setSelectedDepartment] = useState("All");
   const [selectedCampus, setSelectedCampus] = useState("All");
   const [error, setError] = useState("");
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalFound, setTotalFound] = useState(0);
+  const limit = 12;
+
+  // Reset to page 1 when filters or search change
+  useEffect(() => {
+    setPage(1);
+  }, [search, minRating, selectedDepartment, selectedCampus]);
 
   // Fetch professors on mount and when search/filters change
   useEffect(() => {
@@ -43,8 +57,14 @@ export default function HomePage() {
         if (selectedDepartment !== "All") params.department = selectedDepartment;
         if (selectedCampus !== "All") params.campus = selectedCampus;
         
+        // Add pagination params
+        params.page = page;
+        params.limit = limit;
+        
         const data = await fetchProfessors(params);
-        setProfessors(data);
+        setProfessors(data.professors);
+        setTotalPages(data.pages);
+        setTotalFound(data.total);
       } catch (err) {
         setError("Failed to load professors. Is the backend running?");
       } finally {
@@ -53,9 +73,9 @@ export default function HomePage() {
     };
 
     // Debounce search input
-    const timer = setTimeout(load, 300);
+    const timer = setTimeout(load, page === 1 ? 50 : 300); // Faster load for page changes
     return () => clearTimeout(timer);
-  }, [search, minRating, selectedDepartment, selectedCampus]);
+  }, [search, minRating, selectedDepartment, selectedCampus, page]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -165,8 +185,7 @@ export default function HomePage() {
         <>
           <div className="flex items-center justify-between mb-4 max-w-3xl mx-auto lg:max-w-none">
             <p className="text-sm text-gray-500">
-              {professors.length} professor{professors.length !== 1 ? "s" : ""}{" "}
-              found
+              Showing page {page} of {totalPages} ({totalFound} total)
             </p>
           </div>
           {professors.length === 0 ? (
@@ -177,14 +196,85 @@ export default function HomePage() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {professors.map((prof) => (
-                <ProfessorCard key={prof._id} professor={prof} />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {professors.map((prof) => (
+                  <ProfessorCard key={prof._id} professor={prof} />
+                ))}
+              </div>
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="mt-12 flex items-center justify-center gap-2">
+                  <button
+                    disabled={page === 1}
+                    onClick={() => setPage(p => p - 1)}
+                    className="p-2.5 rounded-xl bg-gray-900 border border-gray-800 text-gray-400 hover:text-white hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  
+                  <div className="flex items-center gap-1">
+                    {[...Array(totalPages)].map((_, i) => {
+                      const pNum = i + 1;
+                      // Logic to show only adjacent pages if many
+                      if (
+                        totalPages > 7 &&
+                        pNum !== 1 &&
+                        pNum !== totalPages &&
+                        Math.abs(pNum - page) > 1
+                      ) {
+                        if (pNum === page - 2 || pNum === page + 2) return <span key={pNum} className="px-1 text-gray-600">...</span>;
+                        return null;
+                      }
+
+                      return (
+                        <button
+                          key={pNum}
+                          onClick={() => setPage(pNum)}
+                          className={`
+                            min-w-[40px] h-10 rounded-xl font-bold text-sm transition-all
+                            ${page === pNum 
+                              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' 
+                              : 'bg-gray-900 border border-gray-800 text-gray-400 hover:bg-gray-800 hover:text-white'}
+                          `}
+                        >
+                          {pNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    disabled={page === totalPages}
+                    onClick={() => setPage(p => p + 1)}
+                    className="p-2.5 rounded-xl bg-gray-900 border border-gray-800 text-gray-400 hover:text-white hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </>
       )}
+
+      {/* Missing Professor Link */}
+      <div className="mt-16 text-center border-t border-gray-800/60 pt-8 pb-12">
+        <p className="text-gray-400 text-sm mb-3">Can't find your professor in the directory?</p>
+        <button 
+          onClick={() => setIsModalOpen(true)}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gray-900/80 hover:bg-gray-800 text-gray-300 hover:text-white transition-all border border-gray-700 hover:border-gray-500 text-sm font-medium shadow-sm cursor-pointer"
+        >
+          <AlertCircle className="w-4 h-4 text-amber-400" />
+          Missing Professor? Report Here
+        </button>
+      </div>
+
+      <RequestProfessorModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+      />
     </div>
   );
 }

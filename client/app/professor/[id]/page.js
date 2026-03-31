@@ -7,7 +7,7 @@ import StarRating from "../../../components/StarRating";
 import RatingBreakdown from "../../../components/RatingBreakdown";
 import ReviewCard from "../../../components/ReviewCard";
 import AddReviewForm from "../../../components/AddReviewForm";
-import { isAuthenticated } from "../../../lib/auth";
+import { isAuthenticated, getToken } from "../../../lib/auth";
 
 export default function ProfessorDetailPage({ params }) {
   // Unwrap the params promise (Next.js 15 requires this)
@@ -22,9 +22,10 @@ export default function ProfessorDetailPage({ params }) {
   const loadData = async () => {
     try {
       setLoading(true);
+      const token = getToken();
       const [prof, revData] = await Promise.all([
         fetchProfessor(id),
-        fetchReviews(id),
+        fetchReviews(id, token),
       ]);
       setProfessor(prof);
       setReviewData(revData);
@@ -167,6 +168,7 @@ export default function ProfessorDetailPage({ params }) {
           ) : (
             <AddReviewForm
               professorId={id}
+              professorName={professor.name}
               onReviewAdded={handleReviewAdded}
             />
           )}
@@ -181,7 +183,11 @@ export default function ProfessorDetailPage({ params }) {
         {reviewData?.reviews && reviewData.reviews.length > 0 ? (
           <div className="space-y-4">
             {reviewData.reviews.map((review) => (
-              <ReviewCard key={review._id} review={review} />
+              <ReviewCard 
+                key={review._id} 
+                review={review} 
+                onUpdate={loadData}
+              />
             ))}
           </div>
         ) : (

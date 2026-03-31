@@ -46,8 +46,8 @@ export default function Navbar() {
             
             {user ? (
               <div className="flex items-center gap-4 border-l border-gray-800 pl-4">
-                <span className="text-sm text-indigo-400 font-medium">
-                  Hi {user.role === "admin" ? "Admin" : user.username}
+                <span className="text-sm text-indigo-400 font-medium uppercase tracking-[0.1em]">
+                  {user.role === "admin" ? "Hi Admin" : "Hi"}
                 </span>
                 
                 {user.role === "admin" && (
@@ -65,11 +65,8 @@ export default function Navbar() {
               </div>
             ) : (
               <div className="flex items-center gap-3 border-l border-gray-800 pl-4">
-                <Link href="/login" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">
-                  Log in
-                </Link>
-                <Link href="/signup" className="text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg transition-colors shadow-lg shadow-indigo-500/20">
-                  Join Anonymously
+                <Link href="/login" className="text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-xl transition-all shadow-lg shadow-indigo-500/20 active:scale-95">
+                  Sign In to Review
                 </Link>
               </div>
             )}
