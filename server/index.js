@@ -5,8 +5,8 @@ const cors = require("cors");
 
 const professorRoutes = require("./routes/professors");
 const reviewRoutes = require("./routes/reviews");
-const scrapeRoutes = require("./routes/scrape");
 const authRoutes = require("./routes/auth");
+const requestRoutes = require("./routes/requests");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -18,8 +18,8 @@ app.use(express.json());
 // ─── Routes ───
 app.use("/professors", professorRoutes);
 app.use("/reviews", reviewRoutes);
-app.use("/api/scrape", scrapeRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/requests", requestRoutes);
 
 // Health check endpoint
 app.get("/", (req, res) => {
@@ -35,7 +35,7 @@ async function startServer() {
     // Try connecting to the configured URI first
     await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 3000 });
     console.log("✅ Connected to MongoDB");
-    
+
     // Auto-seed if empty
     await seedDatabase();
   } catch (err) {

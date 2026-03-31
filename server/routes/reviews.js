@@ -3,10 +3,15 @@ const router = express.Router();
 const Review = require("../models/Review");
 const Professor = require("../models/Professor");
 const { profanityMiddleware } = require("../middleware/profanityFilter");
+const { verifyToken, isAdmin, JWT_SECRET } = require("../middleware/auth");
+const { updateProfessorAggregates } = require("../utils/aggregateCalculator");
+const crypto = require("crypto");
+const jwt = require("jsonwebtoken");
+const { isMemberOf } = require("../utils/fuzzyMatcher");
 
 // POST /reviews – Submit a new review
-// Uses profanity middleware to reject abusive content
-router.post("/", profanityMiddleware, async (req, res) => {
+// Requires authentication and uses profanity middleware
+router.post("/", verifyToken, profanityMiddleware, async (req, res) => {
   try {
     const {
       professorId,
@@ -43,6 +48,30 @@ router.post("/", profanityMiddleware, async (req, res) => {
       return res.status(400).json({ error: "Review text cannot exceed 300 characters" });
     }
 
+    // Generate anonymous student hash if user is a student
+    let studentHash = null;
+    if (req.user.role === "student") {
+      // ─── ACADEMIC VERIFICATION CHECK ───
+      // (Bypassed by user request: allow all students to rate all professors)
+      const professor = await Professor.findById(professorId);
+      
+      if (!professor) {
+        return res.status(404).json({ error: "Professor not found" });
+      }
+
+      const srn = req.user.username;
+      studentHash = crypto
+        .createHash("sha256")
+        .update(srn + professorId + JWT_SECRET)
+        .digest("hex");
+      
+      // Check for existing review by this student for this professor
+      const existing = await Review.findOne({ professorId, studentHash });
+      if (existing) {
+        return res.status(400).json({ error: "You have already reviewed this professor." });
+      }
+    }
+
     // Create the review
     const review = new Review({
       professorId,
@@ -53,24 +82,13 @@ router.post("/", profanityMiddleware, async (req, res) => {
       attendanceStrictness,
       reviewText: reviewText || "",
       tags: tags || [],
+      studentHash,
     });
 
     await review.save();
 
     // ─── Recompute professor aggregates ───
-    const allReviews = await Review.find({ professorId });
-    const count = allReviews.length;
-
-    const sum = (field) => allReviews.reduce((acc, r) => acc + r[field], 0);
-
-    professor.totalReviews = count;
-    professor.averageRating = parseFloat((sum("rating") / count).toFixed(2));
-    professor.averageTeachingQuality = parseFloat((sum("teachingQuality") / count).toFixed(2));
-    professor.averageDifficulty = parseFloat((sum("difficulty") / count).toFixed(2));
-    professor.averageGradingStrictness = parseFloat((sum("gradingStrictness") / count).toFixed(2));
-    professor.averageAttendanceStrictness = parseFloat((sum("attendanceStrictness") / count).toFixed(2));
-
-    await professor.save();
+    await updateProfessorAggregates(professorId);
 
     res.status(201).json(review);
   } catch (err) {
@@ -102,9 +120,94 @@ router.get("/:professorId", async (req, res) => {
       };
     }
 
-    res.json({ reviews, breakdown, totalReviews: count });
+    // Check if the current user can edit any of these reviews
+    let enhancedReviews = reviews.map(r => r.toObject());
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      try {
+        const token = authHeader.split(" ")[1];
+        const decoded = jwt.verify(token, JWT_SECRET);
+        
+        if (decoded && decoded.username) {
+          enhancedReviews = enhancedReviews.map(r => {
+            if (r.studentHash) {
+              const hash = crypto
+                .createHash("sha256")
+                .update(decoded.username + professorId + JWT_SECRET)
+                .digest("hex");
+              
+              if (hash === r.studentHash) {
+                return { ...r, canEdit: true };
+              }
+            }
+            return r;
+          });
+        }
+      } catch (e) {
+        // Token invalid, ignore
+      }
+    }
+
+    res.json({ reviews: enhancedReviews, breakdown, totalReviews: count });
   } catch (err) {
+    console.error("Error fetching reviews:", err);
     res.status(500).json({ error: "Failed to fetch reviews" });
+  }
+});
+
+// PUT /reviews/:id – Update an existing review
+router.put("/:id", verifyToken, profanityMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rating, teachingQuality, difficulty, gradingStrictness, attendanceStrictness, reviewText, tags } = req.body;
+
+    const review = await Review.findById(id).select("+studentHash");
+    if (!review) return res.status(404).json({ error: "Review not found" });
+
+    // Authorization: Must be the owner
+    const hash = crypto
+      .createHash("sha256")
+      .update(req.user.username + review.professorId.toString() + JWT_SECRET)
+      .digest("hex");
+
+    if (hash !== review.studentHash) {
+      return res.status(403).json({ error: "You are not authorized to edit this review" });
+    }
+
+    // Update fields
+    review.rating = rating;
+    review.teachingQuality = teachingQuality;
+    review.difficulty = difficulty;
+    review.gradingStrictness = gradingStrictness;
+    review.attendanceStrictness = attendanceStrictness;
+    review.reviewText = reviewText || "";
+    review.tags = tags || [];
+
+    await review.save();
+    await updateProfessorAggregates(review.professorId);
+
+    res.json(review);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to update review" });
+  }
+});
+
+// DELETE /reviews/:id – Delete a review (Admin Only)
+router.delete("/:id", verifyToken, isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const review = await Review.findById(id);
+    if (!review) return res.status(404).json({ error: "Review not found" });
+
+    const professorId = review.professorId;
+    await Review.findByIdAndDelete(id);
+
+    // Update aggregates
+    await updateProfessorAggregates(professorId);
+
+    res.json({ success: true, message: "Review deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to delete review" });
   }
 });
 

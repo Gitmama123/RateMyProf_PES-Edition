@@ -4,68 +4,59 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const { JWT_SECRET } = require("../middleware/auth");
+const { getAllowedProfessors } = require("../services/academyService");
 
-// Utility to generate Reddit-style random username
-const generateRandomId = () => {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let result = "";
-  for (let i = 0; i < 6; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return `User_${result}`;
-};
-
-// POST /api/auth/signup - Only requires password for standard users
-router.post("/signup", async (req, res) => {
+// POST /api/auth/pesu-login
+router.post("/pesu-login", async (req, res) => {
   try {
-    const { password } = req.body;
+    const { username, password } = req.body;
 
-    if (!password || password.length < 6) {
-      return res.status(400).json({ success: false, error: "Password must be at least 6 characters long." });
+    if (!username || !password) {
+      return res.status(400).json({ success: false, error: "Please provide both SRN and Password." });
     }
 
-    // Generate a unique username
-    let uniqueUsername = generateRandomId();
-    let isUnique = false;
-    while (!isUnique) {
-      const existingUser = await User.findOne({ username: uniqueUsername });
-      if (!existingUser) {
-        isUnique = true;
-      } else {
-        uniqueUsername = generateRandomId(); // Regenerate if collision exists
-      }
-    }
-
-    // Hash the password securely
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    const newUser = new User({
-      username: uniqueUsername,
-      password: hashedPassword,
-      role: "user",
+    // 1. Call the PESU-Auth REST endpoint for primary verification
+    const pesuRes = await fetch("https://pesu-auth.onrender.com/authenticate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password, profile: true }),
     });
 
-    await newUser.save();
+    const pesuData = await pesuRes.json();
 
-    // Generate token
+    if (!pesuRes.ok || pesuData.status === false) {
+      return res.status(401).json({ success: false, error: pesuData.message || "Invalid PESU credentials." });
+    }
+
+    // 2. Fetch "All-Time" academic history (Professor Names)
+    // We do this during login to verify which profs they can rate.
+    const allowedProfessors = await getAllowedProfessors(username, password);
+
+    // Success! Generate a JWT containing their SRN and academic history.
     const token = jwt.sign(
-      { id: newUser._id, username: newUser.username, role: newUser.role },
+      { 
+        username, 
+        role: "student",
+        allowedProfessors: allowedProfessors || [] // Default to empty if scraper fails
+      },
       JWT_SECRET,
       { expiresIn: "7d" }
     );
 
-    res.status(201).json({
+    res.json({
       success: true,
       token,
       user: {
-        username: newUser.username,
-        role: newUser.role,
+        username,
+        role: "student",
+        allowedProfessors: allowedProfessors || [],
       },
-      message: `Your anonymous generated ID is: ${newUser.username}`,
+      message: "Successfully verified student status and academic record.",
     });
+
   } catch (err) {
-    res.status(500).json({ success: false, error: "Failed to create account" });
+    console.error("Auth error:", err);
+    res.status(500).json({ success: false, error: "External PESU-Auth API is currently down." });
   }
 });
 

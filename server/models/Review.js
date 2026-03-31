@@ -50,10 +50,21 @@ const reviewSchema = new mongoose.Schema({
     type: [String],
     default: [],
   },
+  studentHash: {
+    type: String,
+    required: false,
+  },
   createdAt: {
     type: Date,
     default: Date.now,
   },
 });
+
+// Sparse unique index to prevent duplicate reviews from the same student on the same professor
+// The partialFilterExpression ensures legacy reviews (without a hash) aren't constrained.
+reviewSchema.index(
+  { professorId: 1, studentHash: 1 },
+  { unique: true, partialFilterExpression: { studentHash: { $exists: true, $type: "string" } } }
+);
 
 module.exports = mongoose.model("Review", reviewSchema);

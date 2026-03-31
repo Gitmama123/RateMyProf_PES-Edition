@@ -2,12 +2,17 @@ const express = require("express");
 const router = express.Router();
 const Professor = require("../models/Professor");
 
-// GET /professors – List all professors
-// Supports query params: ?search=name&minRating=3&department=CSE&campus=EC
+// GET /professors – List all professors with pagination
+// Supports query params: ?search=name&minRating=3&department=CSE&campus=EC&page=1&limit=12
 router.get("/", async (req, res) => {
   try {
-    const { search, minRating, department, campus } = req.query;
+    const { search, minRating, department, campus, page = 1, limit = 12 } = req.query;
     const filter = {};
+
+    // Pagination setup
+    const p = Math.max(1, parseInt(page));
+    const l = Math.max(1, parseInt(limit));
+    const skip = (p - 1) * l;
 
     // Search by name (case-insensitive partial match)
     if (search) {
@@ -21,7 +26,7 @@ router.get("/", async (req, res) => {
 
     // Filter by department
     if (department) {
-      filter.department = { $regex: department, $options: "i" }; // Keep as regex if we want loose matching
+      filter.department = { $regex: department, $options: "i" };
     }
     
     // Filter by campus
@@ -29,9 +34,21 @@ router.get("/", async (req, res) => {
       filter.campus = campus;
     }
 
-    const professors = await Professor.find(filter).sort({ name: 1 });
-    res.json(professors);
+    const professors = await Professor.find(filter)
+      .sort({ name: 1 })
+      .skip(skip)
+      .limit(l);
+
+    const total = await Professor.countDocuments(filter);
+
+    res.json({
+      professors,
+      total,
+      pages: Math.ceil(total / l),
+      currentPage: p
+    });
   } catch (err) {
+    console.error("Fetch professors error:", err);
     res.status(500).json({ error: "Failed to fetch professors" });
   }
 });
