@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { setToken } from "../../lib/auth";
-import { ShieldCheck, Lock, Fingerprint, ExternalLink, Shield } from "lucide-react";
+import { ShieldCheck, Lock, Fingerprint, ExternalLink, Shield, HelpCircle } from "lucide-react";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -59,9 +59,18 @@ export default function LoginPage() {
     <div className="max-w-md mx-auto py-16 px-4">
       <div className="bg-gray-900/60 border border-gray-800 rounded-2xl p-8 shadow-xl">
         <h2 className="text-2xl font-bold text-white mb-2 text-center">Sign In</h2>
-        <p className="text-gray-400 mb-8 text-center text-sm">
-          Please sign in with your PESU credentials to continue.
-        </p>
+        <div className="flex items-center justify-center gap-2 mb-8">
+          <p className="text-gray-400 text-center text-sm">
+            Please sign in with your PESU credentials to continue.
+          </p>
+          <div className="group relative">
+            <HelpCircle className="w-4 h-4 text-gray-500 hover:text-indigo-400 cursor-help transition-colors" />
+            <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-48 p-2 bg-gray-800 border border-gray-700 rounded-lg text-[10px] text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-2xl text-center">
+              We use PESU credentials to prevent spam and ensure reviews come from verified PES students.
+              <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+            </div>
+          </div>
+        </div>
 
         {error && (
           <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm p-3 rounded-lg mb-6 text-center">
@@ -142,6 +151,16 @@ export default function LoginPage() {
                   <p className="text-xs font-bold text-gray-200">Anonymous Identity</p>
                   <p className="text-[10px] text-gray-500 leading-relaxed">
                     Your SRN is hashed to ensure your reviews remain anonymous. Even admins cannot link a review back to your identity.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3 items-start p-3 bg-indigo-500/5 rounded-xl border border-indigo-500/10">
+                <Shield className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-indigo-300">Verified Community</p>
+                  <p className="text-[10px] text-indigo-300/60 leading-relaxed">
+                    Credential-based login prevents spamming and ensures that all reviews come from actual members of the PES community.
                   </p>
                 </div>
               </div>
