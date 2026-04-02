@@ -1,6 +1,6 @@
 # RateMyProf – PES Edition
 
-An anonymous professor rating platform built for PES University students. Students sign in with their PESU credentials, verified against the PESU Academy portal, and can submit ratings and reviews for professors they have been taught by.
+An anonymous professor rating platform built for PES University students. Students sign in with their PESU credentials, verified against the PESU Academy portal.
 
 ---
 
@@ -91,7 +91,8 @@ The backend runs on `http://localhost:5000` and the frontend on `http://localhos
 
 ## Populating the Professor Database
 
-The professor directory is scraped from [staff.pes.edu](https://staff.pes.edu). Run this once after setting up your database:
+The professor directory is scraped from [staff.pes.edu](https://staff.pes.edu). 
+Run this once after setting up your database:
 
 ```bash
 node server/scrape_all.js
@@ -105,22 +106,11 @@ This iterates over all departments on both EC and RR campuses and upserts profes
 
 1. Student enters their PESU SRN and password on the login page.
 2. The backend verifies credentials via the [PESU-Auth API](https://pesu-auth.onrender.com).
-3. On success, the server scrapes the student's academic history from PESU Academy (attendance records + past semester records) to build a list of professors they have been taught by.
-4. A signed JWT (7-day expiry) is issued containing the student's SRN and their `allowedProfessors` list.
-5. This token is required to submit reviews.
+
 
 ## Review Verification
 
-Students can **only review professors who have taught them**. When a review is submitted:
-
-1. The professor's name (from the database) is compared against the student's `allowedProfessors` list embedded in their JWT.
-2. Matching uses **fuzzy string comparison** (Levenshtein distance, ≥85% similarity threshold) to handle minor name variations between PESU Academy records and the staff directory (e.g. `Dr. Gayatri Pisharodhy` vs `Gayathri R Pisharody`).
-3. If no match is found, the review is rejected with a `403` error.
-4. Each student can submit only **one review per professor** (enforced via a hashed identifier).
-
-> **Note:** Since the allowed professor list is baked into the JWT at login time, students must log out and log back in to pick up new professors from a new semester.
-
----
+All review text is run through a **profanity filter** before submission. The filter checks against a curated word list using word-boundary matching, and rejects any review containing inappropriate language with a `400` error.
 
 ## Admin Access
 
