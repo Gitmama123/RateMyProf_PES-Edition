@@ -1,58 +1,71 @@
 const express = require("express");
 const router = express.Router();
-const Review = require("../models/Review");
-const Professor = require("../models/Professor");
-const { profanityMiddleware } = require("../middleware/profanityFilter");
-const { verifyToken, isAdmin, JWT_SECRET } = require("../middleware/auth");
-const { updateProfessorAggregates } = require("../utils/aggregateCalculator");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
+const Review = require("../models/Review");
+const Professor = require("../models/Professor");
+const User = require("../models/User");
+const { checkProfanity } = require("../middleware/profanityMiddleware");
+const { verifyToken, isAdmin, JWT_SECRET } = require("../middleware/auth");
+const { updateProfessorAggregates } = require("../utils/aggregateCalculator");
+const { applyReward } = require("../services/trustService");
 const { isMemberOf } = require("../utils/fuzzyMatcher");
 
-// POST /reviews – Submit a new review
-// Requires authentication and uses profanity middleware
-router.post("/", verifyToken, profanityMiddleware, async (req, res) => {
+/**
+ * Compute the anonymous student hash for a given SRN + professorId.
+ * Used for duplicate prevention and ownership checks.
+ */
+function computeStudentHash(username, professorId) {
+  return crypto
+    .createHash("sha256")
+    .update(username + professorId + JWT_SECRET)
+    .digest("hex");
+}
+
+/**
+ * Look up a User document from a decoded JWT payload.
+ * Students from PESU-SSO may only have `username` (no `id`).
+ */
+async function findDbUser(jwtPayload) {
+  if (jwtPayload?.id) return User.findById(jwtPayload.id);
+  if (jwtPayload?.username) return User.findOne({ username: jwtPayload.username });
+  return null;
+}
+
+// POST /reviews — Submit a new review
+router.post("/", verifyToken, checkProfanity, async (req, res) => {
   try {
     const {
-      professorId,
-      rating,
-      teachingQuality,
-      difficulty,
-      gradingStrictness,
-      attendanceStrictness,
-      reviewText,
-      tags,
+      professorId, rating, teachingQuality, difficulty,
+      gradingStrictness, attendanceStrictness, reviewText, tags,
     } = req.body;
 
-    // Validate required fields
     if (!professorId || !rating || !teachingQuality || !difficulty || !gradingStrictness || !attendanceStrictness) {
       return res.status(400).json({ error: "All rating fields are required" });
     }
 
-    // Check professor exists
     const professor = await Professor.findById(professorId);
     if (!professor) {
       return res.status(404).json({ error: "Professor not found" });
     }
 
-    // Validate rating ranges (1–5)
-    const ratings = [rating, teachingQuality, difficulty, gradingStrictness, attendanceStrictness];
-    for (const r of ratings) {
+    const ratingFields = [rating, teachingQuality, difficulty, gradingStrictness, attendanceStrictness];
+    for (const r of ratingFields) {
       if (r < 1 || r > 5) {
         return res.status(400).json({ error: "All ratings must be between 1 and 5" });
       }
     }
 
-    // Validate review text length
     if (reviewText && reviewText.length > 300) {
       return res.status(400).json({ error: "Review text cannot exceed 300 characters" });
     }
 
-    // Generate anonymous student hash if user is a student
+    const dbUser = await findDbUser(req.user);
+    const isShadowBanned = dbUser?.isShadowBanned === true;
+
+    // Academic verification for students
     let studentHash = null;
     if (req.user.role === "student") {
-      // Academic verification: check that this professor is in the student's
-      // academic history as scraped from PESU Academy at login time.
       const allowedProfessors = req.user.allowedProfessors || [];
 
       if (allowedProfessors.length === 0) {
@@ -67,58 +80,92 @@ router.post("/", verifyToken, profanityMiddleware, async (req, res) => {
         });
       }
 
-      const srn = req.user.username;
-      studentHash = crypto
-        .createHash("sha256")
-        .update(srn + professorId + JWT_SECRET)
-        .digest("hex");
+      studentHash = computeStudentHash(req.user.username, professorId);
 
-      // Prevent duplicate reviews from the same student for the same professor
       const existing = await Review.findOne({ professorId, studentHash });
       if (existing) {
         return res.status(400).json({ error: "You have already reviewed this professor." });
       }
     }
 
-    // Create the review
     const review = new Review({
-      professorId,
-      rating,
-      teachingQuality,
-      difficulty,
-      gradingStrictness,
-      attendanceStrictness,
+      professorId, rating, teachingQuality, difficulty,
+      gradingStrictness, attendanceStrictness,
       reviewText: reviewText || "",
       tags: tags || [],
       studentHash,
+      isHidden: isShadowBanned,
     });
 
     await review.save();
 
-    // ─── Recompute professor aggregates ───
-    await updateProfessorAggregates(professorId);
+    if (!isShadowBanned) {
+      await updateProfessorAggregates(professorId);
 
-    res.status(201).json(review);
+      if (dbUser) {
+        try { await applyReward(dbUser._id); }
+        catch (err) { console.warn("[Reviews] Trust reward failed:", err.message); }
+      }
+    }
+
+    res.status(201).json({ message: "Review submitted successfully", review });
   } catch (err) {
     console.error("Error creating review:", err);
     res.status(500).json({ error: "Failed to submit review" });
   }
 });
 
-// GET /reviews/:professorId – Get all reviews for a professor
-// Also returns aggregate breakdown
+// GET /reviews/:professorId — Get reviews for a professor
 router.get("/:professorId", async (req, res) => {
   try {
     const { professorId } = req.params;
 
-    const reviews = await Review.find({ professorId }).sort({ createdAt: -1 });
+    // Parse optional auth to determine visibility
+    let requestingUser = null;
+    let requestingStudentHash = null;
+    let isRequestingAdmin = false;
 
-    // Compute breakdown averages
-    const count = reviews.length;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      try {
+        const decoded = jwt.verify(authHeader.split(" ")[1], JWT_SECRET);
+        isRequestingAdmin = decoded.role === "admin";
+
+        if (decoded.username) {
+          requestingStudentHash = computeStudentHash(decoded.username, professorId);
+        }
+
+        requestingUser = await findDbUser(decoded);
+      } catch (_) {
+        // Invalid token — treat as anonymous
+      }
+    }
+
+    const isRequestingShadowBanned = requestingUser?.isShadowBanned === true;
+
+    // Build query based on visibility
+    let reviews;
+    if (isRequestingAdmin) {
+      reviews = await Review.find({ professorId }).sort({ createdAt: -1 });
+    } else if (isRequestingShadowBanned && requestingStudentHash) {
+      reviews = await Review.find({
+        professorId,
+        $or: [
+          { isHidden: false },
+          { isHidden: true, studentHash: requestingStudentHash },
+        ],
+      }).sort({ createdAt: -1 });
+    } else {
+      reviews = await Review.find({ professorId, isHidden: false }).sort({ createdAt: -1 });
+    }
+
+    // Breakdown only from visible reviews
+    const visibleReviews = reviews.filter(r => !r.isHidden);
+    const count = visibleReviews.length;
     let breakdown = null;
 
     if (count > 0) {
-      const sum = (field) => reviews.reduce((acc, r) => acc + r[field], 0);
+      const sum = (field) => visibleReviews.reduce((acc, r) => acc + r[field], 0);
       breakdown = {
         overall: parseFloat((sum("rating") / count).toFixed(2)),
         teachingQuality: parseFloat((sum("teachingQuality") / count).toFixed(2)),
@@ -128,32 +175,20 @@ router.get("/:professorId", async (req, res) => {
       };
     }
 
-    // Check if the current user can edit any of these reviews
+    // Annotate editable reviews and strip internal fields
     let enhancedReviews = reviews.map(r => r.toObject());
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      try {
-        const token = authHeader.split(" ")[1];
-        const decoded = jwt.verify(token, JWT_SECRET);
-        
-        if (decoded && decoded.username) {
-          enhancedReviews = enhancedReviews.map(r => {
-            if (r.studentHash) {
-              const hash = crypto
-                .createHash("sha256")
-                .update(decoded.username + professorId + JWT_SECRET)
-                .digest("hex");
-              
-              if (hash === r.studentHash) {
-                return { ...r, canEdit: true };
-              }
-            }
-            return r;
-          });
+
+    if (requestingStudentHash) {
+      enhancedReviews = enhancedReviews.map(r => {
+        if (r.studentHash === requestingStudentHash) {
+          return { ...r, canEdit: true };
         }
-      } catch (e) {
-        // Token invalid, ignore
-      }
+        return r;
+      });
+    }
+
+    if (!isRequestingAdmin) {
+      enhancedReviews = enhancedReviews.map(({ isHidden, studentHash, ...rest }) => rest);
     }
 
     res.json({ reviews: enhancedReviews, breakdown, totalReviews: count });
@@ -163,36 +198,29 @@ router.get("/:professorId", async (req, res) => {
   }
 });
 
-// PUT /reviews/:id – Update an existing review
-router.put("/:id", verifyToken, profanityMiddleware, async (req, res) => {
+// PUT /reviews/:id — Update an existing review
+router.put("/:id", verifyToken, checkProfanity, async (req, res) => {
   try {
-    const { id } = req.params;
-    const { rating, teachingQuality, difficulty, gradingStrictness, attendanceStrictness, reviewText, tags } = req.body;
-
-    const review = await Review.findById(id).select("+studentHash");
+    const review = await Review.findById(req.params.id).select("+studentHash");
     if (!review) return res.status(404).json({ error: "Review not found" });
 
-    // Authorization: Must be the owner
-    const hash = crypto
-      .createHash("sha256")
-      .update(req.user.username + review.professorId.toString() + JWT_SECRET)
-      .digest("hex");
-
+    const hash = computeStudentHash(req.user.username, review.professorId.toString());
     if (hash !== review.studentHash) {
       return res.status(403).json({ error: "You are not authorized to edit this review" });
     }
 
-    // Update fields
-    review.rating = rating;
-    review.teachingQuality = teachingQuality;
-    review.difficulty = difficulty;
-    review.gradingStrictness = gradingStrictness;
-    review.attendanceStrictness = attendanceStrictness;
-    review.reviewText = reviewText || "";
-    review.tags = tags || [];
+    const { rating, teachingQuality, difficulty, gradingStrictness, attendanceStrictness, reviewText, tags } = req.body;
+    Object.assign(review, {
+      rating, teachingQuality, difficulty, gradingStrictness, attendanceStrictness,
+      reviewText: reviewText || "",
+      tags: tags || [],
+    });
 
     await review.save();
-    await updateProfessorAggregates(review.professorId);
+
+    if (!review.isHidden) {
+      await updateProfessorAggregates(review.professorId);
+    }
 
     res.json(review);
   } catch (err) {
@@ -200,17 +228,14 @@ router.put("/:id", verifyToken, profanityMiddleware, async (req, res) => {
   }
 });
 
-// DELETE /reviews/:id – Delete a review (Admin Only)
+// DELETE /reviews/:id — Delete a review (admin only)
 router.delete("/:id", verifyToken, isAdmin, async (req, res) => {
   try {
-    const { id } = req.params;
-    const review = await Review.findById(id);
+    const review = await Review.findById(req.params.id);
     if (!review) return res.status(404).json({ error: "Review not found" });
 
     const professorId = review.professorId;
-    await Review.findByIdAndDelete(id);
-
-    // Update aggregates
+    await Review.findByIdAndDelete(req.params.id);
     await updateProfessorAggregates(professorId);
 
     res.json({ success: true, message: "Review deleted successfully" });

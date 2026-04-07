@@ -54,6 +54,23 @@ const reviewSchema = new mongoose.Schema({
     type: String,
     required: false,
   },
+
+  // ─── Shadow Ban / Moderation ──────────────────────────────────────────────
+  /**
+   * isHidden: When true, this review was submitted by a shadow-banned user.
+   * Hidden reviews:
+   *   - Are NOT returned to public GET requests
+   *   - Are NOT included in professor rating aggregates
+   *   - ARE visible to the submitting user (so they are unaware of the ban)
+   *   - ARE visible to admins
+   */
+  isHidden: {
+    type: Boolean,
+    default: false,
+    index: true, // Indexed for efficient filtered queries
+  },
+  // ──────────────────────────────────────────────────────────────────────────
+
   createdAt: {
     type: Date,
     default: Date.now,
@@ -68,3 +85,4 @@ reviewSchema.index(
 );
 
 module.exports = mongoose.model("Review", reviewSchema);
+

@@ -1,61 +1,21 @@
-// Basic profanity filter middleware
-// Checks review text against a list of banned words
-
-const BANNED_WORDS = [
-  "fuck",
-  "shit",
-  "ass",
-  "bitch",
-  "damn",
-  "crap",
-  "bastard",
-  "dick",
-  "piss",
-  "slut",
-  "whore",
-  "cunt",
-  "retard",
-  "idiot",
-  "stupid",
-  "moron",
-  "dumbass",
-  "loser",
-  "trash",
-  "suck",
-  "pussy",
-  "asshole",
-  "motherfucker"
-];
-
 /**
- * Checks if text contains any banned words (case-insensitive).
- * Returns the first matched word or null.
+ * profanityFilter.js  [LEGACY SHIM]
+ * -----------------------------------
+ * This file is kept for backward-compatibility only.
+ * All logic has been migrated to:
+ *
+ *   middleware/profanityMiddleware.js  ← new middleware
+ *   utils/profanity/detector.js        ← detection engine
+ *   utils/profanity/wordList.js        ← word list
+ *   utils/profanity/normalize.js       ← text normaliser
+ *   utils/profanity/scoring.js         ← severity scoring
+ *   utils/profanity/censor.js          ← content censoring
+ *   services/trustService.js           ← trust system
+ *
+ * Any existing code that imports from this file will continue to work.
  */
-function containsProfanity(text) {
-  if (!text) return null;
-  const lower = text.toLowerCase();
-  for (const word of BANNED_WORDS) {
-    // Match whole words using word boundaries
-    const regex = new RegExp(`\\b${word}\\b`, "i");
-    if (regex.test(lower)) {
-      return word;
-    }
-  }
-  return null;
-}
 
-/**
- * Express middleware – rejects requests where reviewText contains profanity.
- */
-function profanityMiddleware(req, res, next) {
-  const { reviewText } = req.body;
-  const match = containsProfanity(reviewText);
-  if (match) {
-    return res.status(400).json({
-      error: "Review contains inappropriate language and cannot be submitted.",
-    });
-  }
-  next();
-}
+const { checkProfanity, profanityMiddleware } = require("./profanityMiddleware");
+const { containsProfanity } = require("../utils/profanity/detector");
 
-module.exports = { profanityMiddleware, containsProfanity };
+module.exports = { profanityMiddleware, checkProfanity, containsProfanity };

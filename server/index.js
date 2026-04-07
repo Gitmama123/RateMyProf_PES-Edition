@@ -7,6 +7,7 @@ const professorRoutes = require("./routes/professors");
 const reviewRoutes = require("./routes/reviews");
 const authRoutes = require("./routes/auth");
 const requestRoutes = require("./routes/requests");
+const adminRoutes = require("./routes/admin");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -20,6 +21,7 @@ app.use("/professors", professorRoutes);
 app.use("/reviews", reviewRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/requests", requestRoutes);
+app.use("/api/admin", adminRoutes);
 
 // Health check / Diagnostic endpoint
 app.get("/api/health", async (req, res) => {
