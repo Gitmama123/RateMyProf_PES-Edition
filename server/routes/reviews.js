@@ -10,6 +10,7 @@ const { verifyToken, isAdmin, JWT_SECRET } = require("../middleware/auth");
 const { updateProfessorAggregates } = require("../utils/aggregateCalculator");
 const { applyReward } = require("../services/trustService");
 const { isMemberOf } = require("../utils/fuzzyMatcher");
+const { analyzeSentiment } = require("../utils/sentimentAnalyzer");
 
 /**
  * Compute the anonymous student hash for a given SRN + professorId.
@@ -88,6 +89,8 @@ router.post("/", verifyToken, checkProfanity, async (req, res) => {
       }
     }
 
+    const sentiment = await analyzeSentiment(reviewText || "");
+
     const review = new Review({
       professorId, rating, teachingQuality, difficulty,
       gradingStrictness, attendanceStrictness,
@@ -95,6 +98,8 @@ router.post("/", verifyToken, checkProfanity, async (req, res) => {
       tags: tags || [],
       studentHash,
       isHidden: isShadowBanned,
+      sentimentScore: sentiment.score,
+      sentimentLabel: sentiment.label,
     });
 
     await review.save();
@@ -168,12 +173,21 @@ router.get("/:professorId", async (req, res) => {
 
     if (count > 0) {
       const sum = (field) => visibleReviews.reduce((acc, r) => acc + r[field], 0);
+      const reviewsWithText = visibleReviews.filter((r) => r.reviewText && r.reviewText.trim().length > 0);
+      const sentimentAvg =
+        reviewsWithText.length > 0
+          ? parseFloat(
+              (reviewsWithText.reduce((acc, r) => acc + (r.sentimentScore || 0), 0) / reviewsWithText.length).toFixed(3)
+            )
+          : null;
+
       breakdown = {
         overall: parseFloat((sum("rating") / count).toFixed(2)),
         teachingQuality: parseFloat((sum("teachingQuality") / count).toFixed(2)),
         difficulty: parseFloat((sum("difficulty") / count).toFixed(2)),
         gradingStrictness: parseFloat((sum("gradingStrictness") / count).toFixed(2)),
         attendanceStrictness: parseFloat((sum("attendanceStrictness") / count).toFixed(2)),
+        averageSentimentScore: sentimentAvg,
       };
     }
 
@@ -212,10 +226,15 @@ router.put("/:id", verifyToken, checkProfanity, async (req, res) => {
     }
 
     const { rating, teachingQuality, difficulty, gradingStrictness, attendanceStrictness, reviewText, tags } = req.body;
+
+    const sentiment = await analyzeSentiment(reviewText || "");
+
     Object.assign(review, {
       rating, teachingQuality, difficulty, gradingStrictness, attendanceStrictness,
       reviewText: reviewText || "",
       tags: tags || [],
+      sentimentScore: sentiment.score,
+      sentimentLabel: sentiment.label,
     });
 
     await review.save();

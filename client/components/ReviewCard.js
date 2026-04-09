@@ -21,7 +21,8 @@ export default function ReviewCard({ review, onUpdate }) {
     reviewText,
     tags,
     createdAt,
-    canEdit, // Injected by backend
+    canEdit,
+    sentimentLabel,
   } = review;
 
   const formatDate = (date) => {
@@ -159,6 +160,23 @@ export default function ReviewCard({ review, onUpdate }) {
           <p className="text-sm text-gray-400 leading-relaxed mb-3 pl-4 italic">
             &ldquo;{reviewText}&rdquo;
           </p>
+          {/* Sentiment badge */}
+          {sentimentLabel && (
+            <div className="flex justify-end mb-2">
+              <span
+                className={`inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                  sentimentLabel === "positive"
+                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                    : sentimentLabel === "negative"
+                    ? "bg-red-500/10 text-red-400 border-red-500/20"
+                    : "bg-gray-700/50 text-gray-500 border-gray-700"
+                }`}
+              >
+                {sentimentLabel === "positive" ? "😊" : sentimentLabel === "negative" ? "😞" : "😐"}
+                {sentimentLabel}
+              </span>
+            </div>
+          )}
         </div>
       )}
 

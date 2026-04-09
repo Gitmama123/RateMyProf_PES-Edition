@@ -50,6 +50,23 @@ const reviewSchema = new mongoose.Schema({
     type: [String],
     default: [],
   },
+
+  // ─── Sentiment Analysis ───────────────────────────────────────────────────
+  /** Score returned by LLM API: -1.0 (very negative) to 1.0 (very positive) */
+  sentimentScore: {
+    type: Number,
+    default: 0,
+    min: -1,
+    max: 1,
+  },
+  /** Human-readable label derived from the score */
+  sentimentLabel: {
+    type: String,
+    enum: ["positive", "neutral", "negative"],
+    default: "neutral",
+  },
+  // ──────────────────────────────────────────────────────────────────────────
+
   studentHash: {
     type: String,
     required: false,

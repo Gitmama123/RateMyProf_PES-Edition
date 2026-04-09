@@ -61,6 +61,13 @@ const professorSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // Average sentiment score of visible review texts (-1.0 to 1.0)
+    averageSentimentScore: {
+      type: Number,
+      default: 0,
+      min: -1,
+      max: 1,
+    },
   },
   { timestamps: true }
 );
