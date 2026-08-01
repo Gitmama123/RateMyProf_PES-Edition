@@ -164,17 +164,17 @@ export default function ReviewCard({ review, onUpdate }) {
                 <div className="flex justify-end mt-2">
                   <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full"
                     style={{
-                      background: sentimentLabel === "positive" ? "var(--green-bg)"
-                                : sentimentLabel === "negative" ? "var(--red-bg)"
+                      background: (sentimentLabel || "").toLowerCase() === "positive" ? "var(--green-bg)"
+                                : (sentimentLabel || "").toLowerCase() === "negative" ? "var(--red-bg)"
                                 : "var(--surface2)",
-                      color: sentimentLabel === "positive" ? "var(--green-text)"
-                           : sentimentLabel === "negative" ? "var(--red-text)"
+                      color: (sentimentLabel || "").toLowerCase() === "positive" ? "var(--green-text)"
+                           : (sentimentLabel || "").toLowerCase() === "negative" ? "var(--red-text)"
                            : "var(--subtle)",
-                      border: `1px solid ${sentimentLabel === "positive" ? "var(--green-border)"
-                                         : sentimentLabel === "negative" ? "var(--red-border)"
+                      border: `1px solid ${(sentimentLabel || "").toLowerCase() === "positive" ? "var(--green-border)"
+                                         : (sentimentLabel || "").toLowerCase() === "negative" ? "var(--red-border)"
                                          : "var(--border)"}`,
                     }}>
-                    {sentimentLabel === "positive" ? "😊" : sentimentLabel === "negative" ? "😞" : "😐"} {sentimentLabel}
+                    {(sentimentLabel || "").toLowerCase() === "positive" ? "😊" : (sentimentLabel || "").toLowerCase() === "negative" ? "😞" : "😐"} {sentimentLabel}
                   </span>
                 </div>
               )}

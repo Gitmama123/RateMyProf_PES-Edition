@@ -173,7 +173,9 @@ router.get("/:professorId", async (req, res) => {
 
     if (count > 0) {
       const sum = (field) => visibleReviews.reduce((acc, r) => acc + r[field], 0);
-      const reviewsWithText = visibleReviews.filter((r) => r.reviewText && r.reviewText.trim().length > 0);
+      const reviewsWithText = visibleReviews.filter(
+        (r) => r.reviewText && r.reviewText.trim().length > 0 && typeof r.sentimentScore === "number"
+      );
       const sentimentAvg =
         reviewsWithText.length > 0
           ? parseFloat(

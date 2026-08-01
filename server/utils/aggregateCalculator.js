@@ -37,9 +37,9 @@ async function updateProfessorAggregates(professorId) {
       professor.averageGradingStrictness = parseFloat((sum("gradingStrictness") / count).toFixed(2));
       professor.averageAttendanceStrictness = parseFloat((sum("attendanceStrictness") / count).toFixed(2));
 
-      // Average sentiment only over reviews that actually have text
+      // Average sentiment only over reviews that actually have text and valid numeric sentiment scores
       const reviewsWithSentiment = visibleReviews.filter(
-        (r) => r.reviewText && r.reviewText.trim().length > 0
+        (r) => r.reviewText && r.reviewText.trim().length > 0 && typeof r.sentimentScore === "number"
       );
       if (reviewsWithSentiment.length > 0) {
         const sentimentSum = reviewsWithSentiment.reduce((acc, r) => acc + (r.sentimentScore || 0), 0);
